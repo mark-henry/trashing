@@ -57,6 +57,81 @@
             pointer-events: none;
             z-index: 50;
         }
+        
+        #fax-machine {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 80px;
+            height: 40px;
+            background: linear-gradient(45deg, #4CAF50, #81C784);
+            border: 3px solid #2E7D32;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            color: white;
+            font-weight: bold;
+            z-index: 5;
+            pointer-events: none;
+        }
+        
+        /* JUICE SCREEN FILTERS! 🌈 */
+        .slowmo::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: linear-gradient(45deg, rgba(0, 150, 255, 0.15), rgba(100, 200, 255, 0.1));
+            pointer-events: none;
+            z-index: 10000;
+            animation: slowMoPulse 2s ease-in-out infinite alternate;
+        }
+        
+        .magnetic::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: radial-gradient(circle, rgba(255, 0, 100, 0.12), rgba(150, 0, 255, 0.08));
+            pointer-events: none;
+            z-index: 10000;
+            animation: magneticPulse 1.5s ease-in-out infinite alternate;
+        }
+        
+        .doublepoints::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: linear-gradient(135deg, rgba(255, 215, 0, 0.15), rgba(255, 165, 0, 0.1));
+            pointer-events: none;
+            z-index: 10000;
+            animation: goldPulse 1s ease-in-out infinite alternate;
+        }
+        
+        @keyframes slowMoPulse {
+            from { opacity: 0.8; }
+            to { opacity: 0.4; }
+        }
+        
+        @keyframes magneticPulse {
+            from { opacity: 0.7; transform: scale(1); }
+            to { opacity: 0.3; transform: scale(1.02); }
+        }
+        
+        @keyframes goldPulse {
+            from { opacity: 0.6; }
+            to { opacity: 0.2; }
+        }
     </style>
 </head>
 <body>

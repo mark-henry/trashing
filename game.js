@@ -223,6 +223,7 @@ let draggedPaper = null;
 let dragStartPos = null;
 let mouseStartPos = null;
 let mouseHistory = []; // Track recent mouse positions for proper velocity
+let dragTrail = []; // JUICE: Paper drag trail!
 
 // Custom drag implementation for better flinging
 canvas.addEventListener('mousedown', (e) => {
@@ -256,6 +257,9 @@ canvas.addEventListener('mousemove', (e) => {
         if (mouseHistory.length > 5) {
             mouseHistory.shift(); // Keep only last 5 positions
         }
+        
+        // JUICE: Create drag trail particles! ✨
+        createDragTrail(newX, newY, draggedPaper.render.fillStyle);
         
         // Move paper to follow mouse
         Body.setPosition(draggedPaper, { x: newX, y: newY });
@@ -495,16 +499,22 @@ function activatePowerUp(powerUp) {
             game.slowMotion = true;
             game.slowMotionEnd = now + duration;
             engine.timing.timeScale = 0.3; // Slow down physics
+            createActivationEffect('TIME SLOW', '⏰');
+            applyScreenFilter('slowmo');
             break;
             
         case 'magnet':
             game.magneticMode = true;
             game.magneticEnd = now + duration;
+            createActivationEffect('PAPER MAGNET', '🧲');
+            applyScreenFilter('magnetic');
             break;
             
         case 'double':
             game.doublePoints = true;
             game.doublePointsEnd = now + duration;
+            createActivationEffect('DOUBLE POINTS', '✨');
+            applyScreenFilter('doublepoints');
             break;
             
         case 'vacuum':
@@ -578,12 +588,24 @@ Events.on(engine, 'beforeUpdate', function() {
             }
         }
         
-        // Note: Collision detection now handled by Matter.js events below
+        // WHOOSH TRAIL EFFECTS! 💨
+        const velocity = paper.velocity;
+        const speed = Math.sqrt(velocity.x * velocity.x + velocity.y * velocity.y);
+        if (speed > 8) { // Fast-moving papers get whoosh trails
+            createWhooshTrail(paper.position.x, paper.position.y, speed, paper.render.fillStyle);
+        }
         
-        // Remove papers that fall off screen
-        if (paper.position.y > canvas.height + 100) {
+        // Remove overdue papers
+        if (now - paper.spawnTime > paper.timeLimit + 5000) { // 5 seconds grace period
+            console.log('Paper expired:', paper.paperType);
+            
             World.remove(world, paper);
             papers.splice(index, 1);
+            
+            // Penalty for letting paper expire
+            game.score = Math.max(0, game.score - 5);
+            game.combo = 0; // Reset combo
+            createPointsPopup(paper.position.x, paper.position.y, -5, 0);
         }
     });
 });
@@ -641,22 +663,32 @@ Events.on(engine, 'collisionStart', function(event) {
             let effectColor = bin.color;
             
             if (isValidBin) {
-                // Correct bin - calculate points with combo bonus
-                points = bin.points;
+                // MULTIPLIER CHAIN SYSTEM! ⚡
+                const multiplier = calculateMultiplier(game.combo);
+                points = bins[binName].points * multiplier;
                 
-                // Combo system
-                if (now - game.lastTrashTime < game.comboWindow) {
-                    game.combo++;
-                    points += game.combo * 2; // Bonus points for combo
-                } else {
-                    game.combo = 0;
-                }
-                game.lastTrashTime = now;
-                
-                // Time bonus - extra points for quick processing
+                // Time bonus for quick disposal
                 const timeBonus = Math.max(0, Math.floor((paper.timeLimit - timeOnDesk) / 1000));
                 points += timeBonus;
                 
+                // Double points power-up
+                if (game.doublePoints) {
+                    points *= 2;
+                }
+                
+                game.score += points;
+                game.combo++;
+                game.lastComboTime = now;
+                
+                // Create points popup with combo info
+                createPointsPopup(paper.position.x, paper.position.y, points, game.combo);
+                
+                // Show multiplier effect
+                if (multiplier > 1) {
+                    createMultiplierEffect(paper.position.x, paper.position.y, multiplier);
+                }
+                
+                game.papersTrash++;
             } else {
                 // Wrong bin - penalty!
                 points = -15;
@@ -664,22 +696,6 @@ Events.on(engine, 'collisionStart', function(event) {
                 game.penalties++;
                 game.combo = 0; // Reset combo on mistake
             }
-            
-            // Apply double points if active
-            if (game.doublePoints && points > 0) {
-                points *= 2;
-            }
-            
-            // Remove paper from world and array
-            World.remove(world, paper);
-            const paperIndex = papers.indexOf(paper);
-            if (paperIndex > -1) {
-                papers.splice(paperIndex, 1);
-            }
-            
-            // Update score
-            game.score += points;
-            game.papersTrash++;
             
             // SPECIAL SHREDDER JUICE! 🔥
             if (binName === 'shred' && isValidBin) {
@@ -689,21 +705,41 @@ Events.on(engine, 'collisionStart', function(event) {
                 
                 // Shredder "chomp" visual effect
                 createShredderChomp();
+            } else if (binName === 'recycle' && isValidBin) {
+                // RECYCLE SPARKLES! ♻️✨
+                createRecycleEffect(paper.position.x, paper.position.y);
+                createScreenShake(8, 400);
+                createTrashEffect(paper.position.x, paper.position.y, effectColor);
+            } else if (binName === 'trash' && isValidBin) {
+                // TRASH SLAM! 🗑️💥
+                createTrashSlamEffect(paper.position.x, paper.position.y);
+                createScreenShake(10, 450);
+                createTrashEffect(paper.position.x, paper.position.y, effectColor);
             } else {
                 console.log('Regular trash:', paper.paperType, 'in', binName, 'valid:', isValidBin); // Debug log
                 // Regular trash effect for other bins
                 createTrashEffect(paper.position.x, paper.position.y, effectColor);
                 
-                // Medium shake for correct bins, small for wrong bins
-                if (isValidBin) {
-                    createScreenShake(8, 400);
-                } else {
-                    createScreenShake(12, 500); // Wrong bin gets angry shake
-                }
+                // Wrong bin gets angry shake
+                createScreenShake(12, 500);
             }
             
-            // Show points popup
-            createPointsPopup(paper.position.x, paper.position.y, points, game.combo);
+            // EPIC COMBO CELEBRATIONS! 🎆
+            if (game.combo >= 5 && game.combo % 5 === 0) {
+                createEpicComboEffect(game.combo);
+            }
+            
+            // CRITICAL HIT SYSTEM! 💥
+            if (points >= 30 && Math.random() < 0.3) { // 30% chance for high-point actions
+                createCriticalHitEffect(paper.position.x, paper.position.y, points);
+            }
+            
+            // REMOVE PAPER FROM WORLD AND ARRAY! 🗑️
+            World.remove(world, paper);
+            const paperIndex = papers.indexOf(paper);
+            if (paperIndex > -1) {
+                papers.splice(paperIndex, 1);
+            }
             
             updateUI();
         }
@@ -1189,18 +1225,21 @@ function gameLoop() {
         game.slowMotion = false;
         engine.timing.timeScale = 1; // Restore normal speed
         createScreenShake(5, 300); // Small shake when effect ends
+        removeScreenFilter('slowmo');
     }
     
     // Check if magnetic mode should end
     if (game.magneticMode && now > game.magneticEnd) {
         game.magneticMode = false;
         createScreenShake(5, 300);
+        removeScreenFilter('magnetic');
     }
     
     // Check if double points should end
     if (game.doublePoints && now > game.doublePointsEnd) {
         game.doublePoints = false;
         createScreenShake(5, 300);
+        removeScreenFilter('doublepoints');
     }
     
     // Clean up old power-ups (they expire after 20 seconds)
@@ -1210,6 +1249,11 @@ function gameLoop() {
             powerUps.splice(index, 1);
         }
     });
+    
+    // COMBO TIMEOUT SYSTEM! ⏰
+    if (game.combo > 0 && now - game.lastComboTime > 3000) { // 3 seconds without action
+        game.combo = 0; // Reset combo
+    }
     
     updateUI();
     requestAnimationFrame(gameLoop);
@@ -1372,4 +1416,437 @@ function createShredderChomp() {
             shredderBin.body.render.fillStyle = originalColor;
         }
     }, 200);
+}
+
+// Drag trail creation
+function createDragTrail(x, y, color) {
+    const trailParticle = document.createElement('div');
+    trailParticle.style.position = 'absolute';
+    trailParticle.style.left = x + 'px';
+    trailParticle.style.top = y + 'px';
+    trailParticle.style.width = '8px';
+    trailParticle.style.height = '8px';
+    trailParticle.style.backgroundColor = color;
+    trailParticle.style.borderRadius = '50%';
+    trailParticle.style.pointerEvents = 'none';
+    trailParticle.style.zIndex = '1000';
+    
+    document.body.appendChild(trailParticle);
+    
+    // Animate trail particles
+    let opacity = 1;
+    let life = 100;
+    
+    const animateTrail = () => {
+        life -= 2;
+        opacity -= 0.02;
+        
+        trailParticle.style.opacity = Math.max(0, life / 100);
+        
+        if (life > 0) {
+            requestAnimationFrame(animateTrail);
+        } else if (document.body.contains(trailParticle)) {
+            document.body.removeChild(trailParticle);
+        }
+    };
+    animateTrail();
+}
+
+// RECYCLING SPARKLES! ♻️✨
+function createRecycleEffect(x, y) {
+    for (let i = 0; i < 20; i++) {
+        const sparkle = document.createElement('div');
+        sparkle.style.position = 'absolute';
+        sparkle.style.left = x + 'px';
+        sparkle.style.top = y + 'px';
+        sparkle.style.width = '4px';
+        sparkle.style.height = '4px';
+        sparkle.style.backgroundColor = '#00FF88';
+        sparkle.style.borderRadius = '50%';
+        sparkle.style.pointerEvents = 'none';
+        sparkle.style.zIndex = '1000';
+        sparkle.style.boxShadow = '0 0 8px #00FF88';
+        
+        document.body.appendChild(sparkle);
+        
+        const angle = (Math.random() * Math.PI * 2);
+        const speed = 40 + Math.random() * 60;
+        let vx = Math.cos(angle) * speed;
+        let vy = Math.sin(angle) * speed;
+        let px = x, py = y;
+        let life = 80;
+        let twinkle = 0;
+        
+        const animateSparkle = () => {
+            life -= 2;
+            px += vx * 0.02;
+            py += vy * 0.02;
+            vx *= 0.98;
+            vy *= 0.98;
+            twinkle += 0.3;
+            
+            sparkle.style.left = px + 'px';
+            sparkle.style.top = py + 'px';
+            sparkle.style.opacity = (Math.sin(twinkle) * 0.5 + 0.5) * (life / 80);
+            
+            if (life > 0) {
+                requestAnimationFrame(animateSparkle);
+            } else if (document.body.contains(sparkle)) {
+                document.body.removeChild(sparkle);
+            }
+        };
+        animateSparkle();
+    }
+}
+
+// TRASH SLAM EFFECT! 🗑️💥
+function createTrashSlamEffect(x, y) {
+    // Create dust cloud
+    for (let i = 0; i < 15; i++) {
+        const dust = document.createElement('div');
+        dust.style.position = 'absolute';
+        dust.style.left = x + 'px';
+        dust.style.top = y + 'px';
+        dust.style.width = (6 + Math.random() * 8) + 'px';
+        dust.style.height = (6 + Math.random() * 8) + 'px';
+        dust.style.backgroundColor = '#666666';
+        dust.style.borderRadius = '50%';
+        dust.style.pointerEvents = 'none';
+        dust.style.zIndex = '999';
+        dust.style.opacity = '0.6';
+        
+        document.body.appendChild(dust);
+        
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 30 + Math.random() * 50;
+        let vx = Math.cos(angle) * speed;
+        let vy = Math.sin(angle) * speed;
+        let px = x, py = y;
+        let life = 60;
+        let scale = 0.5;
+        
+        const animateDust = () => {
+            life -= 2;
+            px += vx * 0.02;
+            py += vy * 0.02;
+            vx *= 0.96;
+            vy *= 0.96;
+            scale += 0.02;
+            
+            dust.style.left = px + 'px';
+            dust.style.top = py + 'px';
+            dust.style.transform = `scale(${scale})`;
+            dust.style.opacity = Math.max(0, life / 60 * 0.6);
+            
+            if (life > 0) {
+                requestAnimationFrame(animateDust);
+            } else if (document.body.contains(dust)) {
+                document.body.removeChild(dust);
+            }
+        };
+        animateDust();
+    }
+    
+    // "SLAM!" text
+    const slamText = document.createElement('div');
+    slamText.style.position = 'absolute';
+    slamText.style.left = (x - 30) + 'px';
+    slamText.style.top = (y - 20) + 'px';
+    slamText.style.color = '#FF6666';
+    slamText.style.fontSize = '20px';
+    slamText.style.fontWeight = 'bold';
+    slamText.style.textShadow = '2px 2px 4px rgba(0,0,0,0.7)';
+    slamText.style.pointerEvents = 'none';
+    slamText.style.zIndex = '1000';
+    slamText.textContent = 'SLAM!';
+    
+    document.body.appendChild(slamText);
+    
+    let bounceScale = 0.3;
+    let bounceOpacity = 1;
+    const animateSlam = () => {
+        bounceScale += (1.2 - bounceScale) * 0.2;
+        bounceOpacity -= 0.03;
+        
+        slamText.style.transform = `scale(${bounceScale})`;
+        slamText.style.opacity = bounceOpacity;
+        
+        if (bounceOpacity > 0) {
+            requestAnimationFrame(animateSlam);
+        } else if (document.body.contains(slamText)) {
+            document.body.removeChild(slamText);
+        }
+    };
+    animateSlam();
+}
+
+// EPIC COMBO CELEBRATIONS! 🎆
+function createEpicComboEffect(comboCount) {
+    // Fireworks burst
+    for (let i = 0; i < 30; i++) {
+        const firework = document.createElement('div');
+        firework.style.position = 'absolute';
+        firework.style.left = (canvas.width / 2) + 'px';
+        firework.style.top = (canvas.height / 2) + 'px';
+        firework.style.width = '6px';
+        firework.style.height = '6px';
+        const colors = ['#FFD700', '#FF69B4', '#00FFFF', '#FF4500', '#32CD32'];
+        firework.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+        firework.style.borderRadius = '50%';
+        firework.style.pointerEvents = 'none';
+        firework.style.zIndex = '1001';
+        firework.style.boxShadow = `0 0 10px ${firework.style.backgroundColor}`;
+        
+        document.body.appendChild(firework);
+        
+        const angle = (Math.random() * Math.PI * 2);
+        const speed = 80 + Math.random() * 120;
+        let vx = Math.cos(angle) * speed;
+        let vy = Math.sin(angle) * speed;
+        let px = canvas.width / 2, py = canvas.height / 2;
+        let life = 120;
+        
+        const animateFirework = () => {
+            life -= 3;
+            px += vx * 0.02;
+            py += vy * 0.02;
+            vx *= 0.98;
+            vy *= 0.98;
+            
+            firework.style.left = px + 'px';
+            firework.style.top = py + 'px';
+            firework.style.opacity = life / 120;
+            
+            if (life > 0) {
+                requestAnimationFrame(animateFirework);
+            } else if (document.body.contains(firework)) {
+                document.body.removeChild(firework);
+            }
+        };
+        animateFirework();
+    }
+    
+    // Epic combo text
+    const comboText = document.createElement('div');
+    comboText.style.position = 'absolute';
+    comboText.style.left = (canvas.width / 2 - 100) + 'px';
+    comboText.style.top = (canvas.height / 2 - 50) + 'px';
+    comboText.style.color = '#FFD700';
+    comboText.style.fontSize = '36px';
+    comboText.style.fontWeight = 'bold';
+    comboText.style.textShadow = '4px 4px 8px rgba(0,0,0,0.8)';
+    comboText.style.pointerEvents = 'none';
+    comboText.style.zIndex = '1002';
+    comboText.textContent = `${comboCount}x COMBO!`;
+    
+    document.body.appendChild(comboText);
+    
+    let epicScale = 0.3;
+    let epicOpacity = 1;
+    const animateEpic = () => {
+        epicScale += (1.5 - epicScale) * 0.1;
+        epicOpacity -= 0.015;
+        
+        comboText.style.transform = `scale(${epicScale})`;
+        comboText.style.opacity = epicOpacity;
+        
+        if (epicOpacity > 0) {
+            requestAnimationFrame(animateEpic);
+        } else if (document.body.contains(comboText)) {
+            document.body.removeChild(comboText);
+        }
+    };
+    animateEpic();
+    
+    // Screen flash
+    createScreenFlash('#FFD700', 0.3, 400);
+}
+
+// CRITICAL HIT EFFECT! 💥
+function createCriticalHitEffect(x, y, points) {
+    // Lightning bolts
+    for (let i = 0; i < 8; i++) {
+        const bolt = document.createElement('div');
+        bolt.style.position = 'absolute';
+        bolt.style.left = x + 'px';
+        bolt.style.top = y + 'px';
+        bolt.style.width = '3px';
+        bolt.style.height = '20px';
+        bolt.style.backgroundColor = '#FFFF00';
+        bolt.style.pointerEvents = 'none';
+        bolt.style.zIndex = '1000';
+        bolt.style.boxShadow = '0 0 12px #FFFF00';
+        
+        document.body.appendChild(bolt);
+        
+        const angle = (i * Math.PI * 2) / 8;
+        let px = x, py = y;
+        let life = 40;
+        
+        const animateBolt = () => {
+            life -= 4;
+            px += Math.cos(angle) * 2;
+            py += Math.sin(angle) * 2;
+            
+            bolt.style.left = px + 'px';
+            bolt.style.top = py + 'px';
+            bolt.style.transform = `rotate(${angle * 180 / Math.PI + 90}deg)`;
+            bolt.style.opacity = life / 40;
+            
+            if (life > 0) {
+                requestAnimationFrame(animateBolt);
+            } else if (document.body.contains(bolt)) {
+                document.body.removeChild(bolt);
+            }
+        };
+        animateBolt();
+    }
+    
+    // "CRITICAL!" text
+    const critText = document.createElement('div');
+    critText.style.position = 'absolute';
+    critText.style.left = (x - 40) + 'px';
+    critText.style.top = (y - 30) + 'px';
+    critText.style.color = '#FFFF00';
+    critText.style.fontSize = '24px';
+    critText.style.fontWeight = 'bold';
+    critText.style.textShadow = '3px 3px 6px rgba(0,0,0,0.8)';
+    critText.style.pointerEvents = 'none';
+    critText.style.zIndex = '1001';
+    critText.textContent = 'CRITICAL!';
+    
+    document.body.appendChild(critText);
+    
+    let critScale = 0.5;
+    let critOpacity = 1;
+    const animateCrit = () => {
+        critScale += (1.3 - critScale) * 0.15;
+        critOpacity -= 0.025;
+        
+        critText.style.transform = `scale(${critScale})`;
+        critText.style.opacity = critOpacity;
+        
+        if (critOpacity > 0) {
+            requestAnimationFrame(animateCrit);
+        } else if (document.body.contains(critText)) {
+            document.body.removeChild(critText);
+        }
+    };
+    animateCrit();
+}
+
+// SCREEN FLASH EFFECT! ⚡
+function createScreenFlash(color, intensity = 0.5, duration = 300) {
+    const flash = document.createElement('div');
+    flash.style.position = 'fixed';
+    flash.style.top = '0';
+    flash.style.left = '0';
+    flash.style.width = '100vw';
+    flash.style.height = '100vh';
+    flash.style.backgroundColor = color;
+    flash.style.opacity = intensity;
+    flash.style.pointerEvents = 'none';
+    flash.style.zIndex = '9999';
+    
+    document.body.appendChild(flash);
+    
+    setTimeout(() => {
+        let flashOpacity = intensity;
+        const fadeFlash = () => {
+            flashOpacity -= intensity / 20;
+            flash.style.opacity = Math.max(0, flashOpacity);
+            
+            if (flashOpacity > 0) {
+                requestAnimationFrame(fadeFlash);
+            } else if (document.body.contains(flash)) {
+                document.body.removeChild(flash);
+            }
+        };
+        fadeFlash();
+    }, duration / 4);
+}
+
+// Screen filter management
+function applyScreenFilter(filter) {
+    document.body.classList.add(filter);
+}
+
+function removeScreenFilter(filter) {
+    document.body.classList.remove(filter);
+}
+
+// WHOOSH TRAIL EFFECTS! 💨
+function createWhooshTrail(x, y, speed, color) {
+    // Only create trails for very fast papers to avoid spam
+    if (Math.random() > 0.3) return; // 30% chance to create trail
+    
+    const trail = document.createElement('div');
+    trail.style.position = 'absolute';
+    trail.style.left = x + 'px';
+    trail.style.top = y + 'px';
+    trail.style.width = '12px';
+    trail.style.height = '3px';
+    trail.style.backgroundColor = color;
+    trail.style.borderRadius = '50%';
+    trail.style.pointerEvents = 'none';
+    trail.style.zIndex = '998';
+    trail.style.opacity = Math.min(1, speed / 15);
+    trail.style.transform = `scaleX(${Math.min(3, speed / 10)})`;
+    
+    document.body.appendChild(trail);
+    
+    let life = 20;
+    const animateWhoosh = () => {
+        life -= 2;
+        trail.style.opacity = Math.max(0, life / 20 * Math.min(1, speed / 15));
+        
+        if (life > 0) {
+            requestAnimationFrame(animateWhoosh);
+        } else if (document.body.contains(trail)) {
+            document.body.removeChild(trail);
+        }
+    };
+    animateWhoosh();
+}
+
+// MULTIPLIER CHAIN EFFECTS! ⚡
+function calculateMultiplier(combo) {
+    if (combo >= 10) return 3;
+    if (combo >= 5) return 2;
+    return 1;
+}
+
+function createMultiplierEffect(x, y, multiplier) {
+    if (multiplier <= 1) return;
+    
+    const multiplierText = document.createElement('div');
+    multiplierText.style.position = 'absolute';
+    multiplierText.style.left = (x + 30) + 'px';
+    multiplierText.style.top = (y - 10) + 'px';
+    multiplierText.style.color = multiplier >= 3 ? '#FF0066' : '#FF6600';
+    multiplierText.style.fontSize = (14 + multiplier * 2) + 'px';
+    multiplierText.style.fontWeight = 'bold';
+    multiplierText.style.textShadow = '2px 2px 4px rgba(0,0,0,0.8)';
+    multiplierText.style.pointerEvents = 'none';
+    multiplierText.style.zIndex = '1001';
+    multiplierText.textContent = `x${multiplier}`;
+    
+    document.body.appendChild(multiplierText);
+    
+    let bounceScale = 0.5;
+    let bounceOpacity = 1;
+    const animateMultiplier = () => {
+        bounceScale += (1.4 - bounceScale) * 0.15;
+        bounceOpacity -= 0.025;
+        
+        multiplierText.style.transform = `scale(${bounceScale})`;
+        multiplierText.style.opacity = bounceOpacity;
+        
+        if (bounceOpacity > 0) {
+            requestAnimationFrame(animateMultiplier);
+        } else if (document.body.contains(multiplierText)) {
+            document.body.removeChild(multiplierText);
+        }
+    };
+    animateMultiplier();
 } 
