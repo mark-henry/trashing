@@ -1,3 +1,6 @@
+ENTIRELY VIBE-CODED FOR VIBE CODING FUN SUNDAY EVENT :)
+I ended up using claude-4-sonnet exclusively. If you just keep egging it on it gets pretty peppy and uses a lot of emoji
+
 # Zero-G Paper Chaos! 🌪️📄
 
 A physics-based paper management game built with HTML5 Canvas and Matter.js. Manage chaos in zero gravity as papers fly at you from all directions!
